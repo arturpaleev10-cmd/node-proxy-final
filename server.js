@@ -4,35 +4,15 @@ const httpProxy = require('http-proxy');
 const port = process.env.PORT || 8080;
 const proxy = httpProxy.createProxyServer({});
 
-const AUTH_USER = 'user';
-const AUTH_PASS = 'password';
-
-// Проверка Basic Auth
-function checkAuth(req) {
-    const auth = req.headers['proxy-authorization'];
-    if (!auth) return false;
-    const expected = 'Basic ' + Buffer.from(AUTH_USER + ':' + AUTH_PASS).toString('base64');
-    return auth === expected;
-}
-
 const server = http.createServer((req, res) => {
-    // Health check — всегда открыт
+    // Health check
     if (req.url === '/ping') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('pong');
         return;
     }
 
-    // Требуем авторизацию
-    if (!checkAuth(req)) {
-        res.writeHead(407, {
-            'Proxy-Authenticate': 'Basic realm="Proxy"'
-        });
-        res.end('Authentication required');
-        return;
-    }
-
-    // Проксируем запрос как есть
+    // Проксируем запрос без авторизации
     proxy.web(req, res, {
         target: req.url,
         changeOrigin: true,
@@ -40,14 +20,8 @@ const server = http.createServer((req, res) => {
     });
 });
 
-// Поддержка HTTPS CONNECT
+// Поддержка HTTPS CONNECT (без авторизации)
 server.on('connect', (req, clientSocket, head) => {
-    if (!checkAuth(req)) {
-        clientSocket.write('HTTP/1.1 407 Proxy Authentication Required\r\n\r\n');
-        clientSocket.end();
-        return;
-    }
-
     const [hostname, port] = req.url.split(':');
     const targetSocket = require('net').connect(port || 443, hostname, () => {
         clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
@@ -66,7 +40,7 @@ server.listen(port, () => {
     console.log(`Proxy server running on port ${port}`);
 });
 
-// Самопинг каждые 10 минут для предотвращения сна
+// Самопинг каждые 10 минут
 setInterval(() => {
     http.get(`http://localhost:${port}/ping`, (res) => {
         console.log('Self-ping OK');
