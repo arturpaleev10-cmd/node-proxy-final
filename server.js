@@ -14,23 +14,19 @@ const server = http.createServer((req, res) => {
     }
 
     // Определяем целевой URL
-    // Браузеры при использовании HTTP-прокси отправляют абсолютный URL,
-    // curl тоже передаёт полный URL. Но на всякий случай разберём и добавим http:// если нужно.
     let target = req.url;
     if (!target.startsWith('http://') && !target.startsWith('https://')) {
-        // Если URL относительный, предполагаем http и берём заголовок Host
         target = 'http://' + (req.headers.host || 'localhost') + req.url;
     }
 
     const parsed = url.parse(target);
     if (!parsed.host) {
-        // Не можем определить хост, отвечаем ошибкой
         res.writeHead(400, { 'Content-Type': 'text/plain' });
         res.end('Bad Request: missing host');
         return;
     }
 
-    // Проксируем запрос без авторизации
+    // Проксируем без авторизации
     proxy.web(req, res, {
         target: parsed.protocol + '//' + parsed.host,
         changeOrigin: true,
@@ -38,7 +34,7 @@ const server = http.createServer((req, res) => {
     });
 });
 
-// Поддержка HTTPS через CONNECT (без авторизации)
+// Поддержка HTTPS через CONNECT
 server.on('connect', (req, clientSocket, head) => {
     const [hostname, port] = req.url.split(':');
     const targetSocket = require('net').connect(port || 443, hostname, () => {
@@ -54,7 +50,7 @@ server.on('connect', (req, clientSocket, head) => {
     });
 });
 
-// Самопинг каждые 10 минут, чтобы Render не усыплял
+// Самопинг каждые 10 минут
 setInterval(() => {
     http.get(`http://localhost:${port}/ping`, (res) => {
         console.log('Self-ping OK');
