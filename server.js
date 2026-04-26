@@ -1,29 +1,27 @@
 const http = require('http');
-const httpProxy = require('http-proxy');
+const net = require('net');
 
-const port = process.env.PORT || 8080;
-const proxy = httpProxy.createProxyServer({});
+const AUTH = { user: '', pass: '' }; // без авторизации
 
 const server = http.createServer((req, res) => {
-    // Health check для Render (отвечаем на любые простые проверки)
     if (req.url === '/ping' || req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('pong');
         return;
     }
-
-    // Проксируем запрос. req.url уже содержит полный URL, если клиент использует HTTP-прокси
-    proxy.web(req, res, {
-        target: req.url,
-        changeOrigin: true,
-        followRedirects: true
+    // HTTP-прокси как обычно
+    const options = new URL(req.url);
+    const req2 = http.request({ host: options.hostname, port: options.port || 80, path: options.pathname + options.search, method: req.method, headers: req.headers }, (response) => {
+        res.writeHead(response.statusCode, response.headers);
+        response.pipe(res);
     });
+    req.pipe(req2);
 });
 
-// Поддержка HTTPS (CONNECT)
+// SOCKS5 через тот же порт (используется для CONNECT)
 server.on('connect', (req, clientSocket, head) => {
     const [hostname, port] = req.url.split(':');
-    const targetSocket = require('net').connect(port || 443, hostname, () => {
+    const targetSocket = net.connect(port || 443, hostname, () => {
         clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
         targetSocket.write(head);
         targetSocket.pipe(clientSocket);
@@ -35,11 +33,11 @@ server.on('connect', (req, clientSocket, head) => {
     });
 });
 
-// Самопинг, чтобы Render не засыпал
+// Самопинг
 setInterval(() => {
-    http.get(`http://localhost:${port}/ping`, (res) => { res.resume(); }).on('error', () => {});
+    http.get(`http://localhost:${process.env.PORT || 8080}/ping`, (res) => res.resume()).on('error', () => {});
 }, 10 * 60 * 1000);
 
-server.listen(port, () => {
-    console.log(`Proxy server running on port ${port}`);
+server.listen(process.env.PORT || 8080, () => {
+    console.log(`Proxy (HTTP/SOCKS5) running on port ${process.env.PORT || 8080}`);
 });
